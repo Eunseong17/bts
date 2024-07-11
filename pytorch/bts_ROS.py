@@ -8,16 +8,20 @@ import sys
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torchvision import transforms
 import errno
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from bts_dataloader import *
 
-# ROS 관련 임포트
+# Custom imports
+# from bts_dataloader import *
+
+# ROS imports
 import rospy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 
+# Argument parser configuration
 def convert_arg_line_to_args(arg_line):
     for arg in arg_line.split():
         if not arg.strip():
@@ -54,12 +58,30 @@ for key, val in vars(__import__(args.model_name)).items():
         continue
     vars()[key] = val
 
+def _is_numpy_image(img):
+    return isinstance(img, np.ndarray) and (img.ndim in {2, 3})
+
 def get_num_lines(file_path):
     f = open(file_path, 'r')
     lines = f.readlines()
     f.close()
     return len(lines)
 
+class ToTensor(object):
+    def __init__(self):
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    
+    def __call__(self, image):
+        image = self.to_tensor(image)
+        image = self.normalize(image)
+        return image
+    
+    def to_tensor(self, pic):
+        if not _is_numpy_image(pic):
+            raise TypeError('pic should be ndarray. Got {}'.format(type(pic)))
+        
+        img = torch.from_numpy(pic.transpose((2, 0, 1)))
+        return img
 
 class ImagePreprocessor:
     def __init__(self, args):
@@ -71,11 +93,12 @@ class ImagePreprocessor:
         if self.args.do_kb_crop:
             height = image.shape[0]
             width = image.shape[1]
-            top_margin = int(height - 512)
-            left_margin = int((width - 928) / 2)
+            top_margin = int(height - 512) # 28
+            left_margin = int((width - 928) / 2) # 16
             image = image[top_margin:top_margin + 512, left_margin:left_margin + 928, :]
             
         return image
+    
 
 class DepthEstimator:
     def __init__(self, params):
@@ -83,10 +106,10 @@ class DepthEstimator:
         # self.depth_pub = rospy.Publisher('/estimate_depth_image', Image, queue_size=10)
         # self.bridge = CvBridge()
         # self.model = self.initialize_model()
-        # self.image_sub = rospy.Subscriber("/front_cam/image_raw", Image, self.image_callback)
+        # self.image_sub = rospy.Subscriber("/right_cam/image_raw", Image, self.image_callback)
         self.params = params
-        self.depth_pub = rospy.Publisher('/estimate_depth_image', Image, queue_size=10)
-        self.colored_depth_pub = rospy.Publisher('/colored_depth_image', Image, queue_size=10) # 새로운 컬러맵 토픽
+        self.depth_pub = rospy.Publisher('/front_cam/image_raw/estimate_depth', Image, queue_size=100)
+        # self.colored_depth_pub = rospy.Publisher('/colored_depth_image', Image, queue_size=10) # 새로운 컬러맵 토픽
         self.bridge = CvBridge()
         self.model = self.initialize_model()
         self.image_sub = rospy.Subscriber("/front_cam/image_raw", Image, self.image_callback)
@@ -107,7 +130,29 @@ class DepthEstimator:
         
         # Apply preprocessing for test mode
         preprocessed_image = preprocessor.preprocess_for_test(image)
-        return preprocessed_image
+        
+        # Convert the preprocessed numpy image to tensor
+        tensor_converter = ToTensor()
+        preprocessed_tensor = tensor_converter(preprocessed_image)
+        
+        # Add the batch dimension
+        preprocessed_tensor = preprocessed_tensor.unsqueeze(0)
+
+        return preprocessed_tensor
+    
+    def undo_kb_crop(self, cropped_image):
+        # if not self.args.do_kb_crop:
+        #     return cropped_image
+        
+        # Initialize an empty image of the original size
+        orig_height, orig_width = 540, 960
+        restored_image = np.zeros((orig_height, orig_width), dtype=cropped_image.dtype)
+        top_margin = 28
+        left_margin = 16
+        # Place the cropped image at the right position
+        restored_image[top_margin:top_margin + 512, left_margin:left_margin + 928] = cropped_image
+        
+        return restored_image
     
     def apply_colormap_to_image(self, depth_image_np):
         """
@@ -124,63 +169,54 @@ class DepthEstimator:
         
         return colored_depth_image
 
-    # def image_callback(self, data):
-    #     try:
-    #         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-    #         preprocessed_image = self.preprocess_image(cv_image)
-    #         depth_image = self.process_image(preprocessed_image)
-    #         self.publish_depth_image(depth_image)
-    #     except CvBridgeError as e:
-    #         print(e)
     def image_callback(self, data):
         try:
             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             preprocessed_image = self.preprocess_image(cv_image)
             depth_image_np = self.process_image(preprocessed_image)
             
+            # 크롭을 복구
+            depth_image_np = self.undo_kb_crop(depth_image_np)
             # 컬러맵을 적용합니다.
-            colored_depth_image_np = self.apply_colormap_to_image(depth_image_np)
+            # colored_depth_image_np = self.apply_colormap_to_image(depth_image_np)
             
             # 컬러맵이 적용된 이미지를 ROS 메시지로 변환합니다.
-            colored_depth_image_msg = self.bridge.cv2_to_imgmsg(colored_depth_image_np, encoding="bgr8")
+            # colored_depth_image_msg = self.bridge.cv2_to_imgmsg(colored_depth_image_np, encoding="bgr8")
             
             # 깊이 이미지와 컬러맵 이미지를 각각의 토픽으로 발행합니다.
-            self.publish_depth_image(depth_image_np)
-            self.colored_depth_pub.publish(colored_depth_image_msg)
+            self.publish_depth_image(depth_image_np, data.header)
+            # self.colored_depth_pub.publish(colored_depth_image_msg)
         except CvBridgeError as e:
             print(e)
 
 
     def process_image(self, image):
         # Convert the BGR image to RGB
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = image.transpose((2, 0, 1))
-        focal_value = 298.3504
+        focal_value = 296.0927 # front : 296.0927 rear: 299.3234, left: 299.1370, right: 297.6590
         focal = torch.tensor([focal_value]).float().cuda()
 
         # Process the image using the loaded depth estimation model
         with torch.no_grad():
-            # image = Variable(torch.from_numpy(image).float().cuda())
-            image = Variable(torch.from_numpy(image).unsqueeze(0).float().cuda())
             _, _, _, _, depth_est = self.model(image, focal)
             pred_depth = depth_est.cpu().numpy().squeeze()
 
-        if self.params.dataset == 'kitti' or self.params.dataset == 'kitti_benchmark':
-            pred_depth_scaled = pred_depth * 256.0
-        else:
-            pred_depth_scaled = pred_depth * 1000.0
+        return pred_depth
 
-        pred_depth_scaled = pred_depth_scaled.astype(np.uint16)
-        return pred_depth_scaled
-
-    def publish_depth_image(self, depth_image):
+    def publish_depth_image(self, depth_image, header):
         try:
-            depth_ros_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="passthrough")
+            depth_ros_msg = self.bridge.cv2_to_imgmsg(depth_image, encoding="32FC1")
+            depth_ros_msg.header = header
             self.depth_pub.publish(depth_ros_msg)
         except CvBridgeError as e:
             print(e)
 
+    def run(self):
+        rate = rospy.Rate(20)
+        while not rospy.is_shutdown():
+            rate.sleep()
+
 if __name__ == '__main__':
     rospy.init_node('depth_estimator', anonymous=True)
     depth_estimator = DepthEstimator(args)
-    rospy.spin()
+    # rospy.spin()
+    depth_estimator.run()
