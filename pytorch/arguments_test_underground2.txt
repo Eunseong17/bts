@@ -1,0 +1,10 @@
+--encoder densenet121_bts
+--data_path ../../dataset/underground/
+--dataset kitti
+--filenames_file ../train_test_inputs/underground_eigen_test_files_with_gt_under6_filtered.txt
+--model_name underground2_bts_eigen_v2_pytorch_v2
+--checkpoint_path ./models/underground2_bts_eigen_v2_pytorch_v2/model-1000-best_d1_0.91206
+--input_height 512
+--input_width 960
+--max_depth 50
+--do_kb_crop

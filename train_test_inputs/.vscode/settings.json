@@ -1,0 +1,14 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/eunseong/cartographer_ws/install_isolated/lib/python3/dist-packages",
+        "/home/eunseong/lidar_ws/devel/lib/python3/dist-packages",
+        "/home/eunseong/catkin_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/eunseong/cartographer_ws/install_isolated/lib/python3/dist-packages",
+        "/home/eunseong/lidar_ws/devel/lib/python3/dist-packages",
+        "/home/eunseong/catkin_ws/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
+}

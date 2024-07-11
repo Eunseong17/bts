@@ -111,7 +111,9 @@ def test():
             file_dir = pred_filenames[t_id].split('.')[0]
             filename = file_dir.split('_')[-1]
             directory = file_dir.replace('_' + filename, '')
-            gt_depth_path = os.path.join(args.gt_path, directory, 'proj_depth/groundtruth/image_02', filename + '.png')
+            # gt_depth_path = os.path.join(args.gt_path, directory, 'proj_depth/groundtruth/image_02', filename + '.png')
+            gt_depth_path = os.path.join(args.gt_path, 'depth_image_'+ filename + '.png')
+            print(gt_depth_path)
             depth = cv2.imread(gt_depth_path, -1)
             if depth is None:
                 print('Missing: %s ' % gt_depth_path)
@@ -185,10 +187,10 @@ def eval(pred_depths):
 
         if args.do_kb_crop:
             height, width = gt_depth.shape
-            top_margin = int(height - 352)
-            left_margin = int((width - 1216) / 2)
+            top_margin = int(height - 512)
+            left_margin = int((width - 928) / 2)
             pred_depth_uncropped = np.zeros((height, width), dtype=np.float32)
-            pred_depth_uncropped[top_margin:top_margin + 352, left_margin:left_margin + 1216] = pred_depth
+            pred_depth_uncropped[top_margin:top_margin + 512, left_margin:left_margin + 928] = pred_depth
             pred_depth = pred_depth_uncropped
 
         if args.garg_crop or args.eigen_crop:

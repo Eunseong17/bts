@@ -261,7 +261,7 @@ class bts(nn.Module):
         iconv1 = self.conv1(concat1)
         final_depth = self.params.max_depth * self.get_depth(iconv1)
         if self.params.dataset == 'kitti':
-            final_depth = final_depth * focal.view(-1, 1, 1, 1).float() / 715.0873
+            final_depth = final_depth * focal.view(-1, 1, 1, 1).float() / 298.3504 # 715.0873
         
         return depth_8x8_scaled, depth_4x4_scaled, depth_2x2_scaled, reduc1x1, final_depth
 

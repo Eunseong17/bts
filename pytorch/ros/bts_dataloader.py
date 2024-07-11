@@ -69,7 +69,7 @@ class BtsDataLoader(object):
                                    pin_memory=True,
                                    sampler=self.eval_sampler)
         
-        elif mode == 'test':
+        elif mode == 'test': # 실행
             self.testing_samples = DataLoadPreprocess(args, mode, transform=preprocessing_transforms(mode))
             self.data = DataLoader(self.testing_samples, 1, shuffle=False, num_workers=1)
 
@@ -83,14 +83,26 @@ class DataLoadPreprocess(Dataset):
         if mode == 'online_eval':
             with open(args.filenames_file_eval, 'r') as f:
                 self.filenames = f.readlines()
-        else:
+        else: # test
             with open(args.filenames_file, 'r') as f:
                 self.filenames = f.readlines()
     
         self.mode = mode
         self.transform = transform
         self.to_tensor = ToTensor
-        self.is_for_online_eval = is_for_online_eval 
+        self.is_for_online_eval = is_for_online_eval
+    
+    def apply_mask(self,image, mask_path):
+        mask = Image.open(mask_path)
+    
+        
+        # 마스크를 적용합니다.
+        image_np = np.array(image)
+        mask_np = np.array(mask)
+        masked_image = cv2.bitwise_and(image_np, image_np, mask=mask_np)
+        
+        # 결과를 다시 PIL 이미지로 변환하여 반환합니다.
+        return Image.fromarray(masked_image)    
     
     def __getitem__(self, idx):
         sample_path = self.filenames[idx]
@@ -139,7 +151,7 @@ class DataLoadPreprocess(Dataset):
             image, depth_gt = self.train_preprocess(image, depth_gt)
             sample = {'image': image, 'depth': depth_gt, 'focal': focal}
         
-        else:
+        else: #
             if self.mode == 'online_eval':
                 data_path = self.args.data_path_eval
             else:

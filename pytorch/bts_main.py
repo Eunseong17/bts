@@ -266,10 +266,10 @@ def online_eval(model, dataloader_eval, gpu, ngpus):
 
         if args.do_kb_crop:
             height, width = gt_depth.shape
-            top_margin = int(height - 352)
-            left_margin = int((width - 1216) / 2)
+            top_margin = int(height - 512)
+            left_margin = int((width - 928) / 2)
             pred_depth_uncropped = np.zeros((height, width), dtype=np.float32)
-            pred_depth_uncropped[top_margin:top_margin + 352, left_margin:left_margin + 1216] = pred_depth
+            pred_depth_uncropped[top_margin:top_margin + 512, left_margin:left_margin + 928] = pred_depth
             pred_depth = pred_depth_uncropped
 
         pred_depth[pred_depth < args.min_depth_eval] = args.min_depth_eval
@@ -422,9 +422,13 @@ def main_worker(gpu, ngpus_per_node, args):
     num_log_images = args.batch_size
     end_learning_rate = args.end_learning_rate if args.end_learning_rate != -1 else 0.1 * args.learning_rate
 
-    var_sum = [var.sum() for var in model.parameters() if var.requires_grad]
+    # var_sum = [var.sum() for var in model.parameters() if var.requires_grad]
+    # var_cnt = len(var_sum)
+    # var_sum = np.sum(var_sum)
+    var_sum = [var.sum().cpu().detach().numpy() for var in model.parameters() if var.requires_grad]
     var_cnt = len(var_sum)
     var_sum = np.sum(var_sum)
+
 
     print("Initial variables' sum: {:.3f}, avg: {:.3f}".format(var_sum, var_sum/var_cnt))
 
@@ -449,7 +453,7 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.dataset == 'nyu':
                 mask = depth_gt > 0.1
             else:
-                mask = depth_gt > 1.0
+                mask = depth_gt > 0.1
 
             loss = silog_criterion.forward(depth_est, depth_gt, mask.to(torch.bool))
             loss.backward()
@@ -467,8 +471,9 @@ def main_worker(gpu, ngpus_per_node, args):
 
             duration += time.time() - before_op_time
             if global_step and global_step % args.log_freq == 0 and not model_just_loaded:
-                var_sum = [var.sum() for var in model.parameters() if var.requires_grad]
+                var_sum = [var.sum().cpu().detach().numpy() for var in model.parameters() if var.requires_grad]
                 var_cnt = len(var_sum)
+                print(type(var_sum))
                 var_sum = np.sum(var_sum)
                 examples_per_sec = args.batch_size / duration * args.log_freq
                 duration = 0
